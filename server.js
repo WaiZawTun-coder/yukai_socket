@@ -1,7 +1,7 @@
 import express, { json } from "express";
 import { createServer } from "http";
 import cors from "cors";
-import { initSocket } from "./socket";
+import { initSocket } from "./socket.js";
 
 const app = express();
 
