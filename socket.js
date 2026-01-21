@@ -7,7 +7,11 @@ const initSocket = (server) => {
     cors: {
       origin: "*", // Replace with your frontend URL in production
       methods: ["GET", "POST"],
+      credentials: true,
     },
+    transports: ["websocket"],
+    pingInterval: 25000,
+    pingTimeout: 20000,
   });
 
   io.on("connection", (socket) => {
