@@ -247,6 +247,42 @@ const initSocket = (server) => {
     });
 
     /* ============================================================
+       Notify user actions (react, comment, friend requests <sent request, accept request, follow>)
+    ============================================================ */
+
+    const emitNotification = (type, payload) => {
+      console.log({ payload });
+      const { referenceId, message, target_user_id, sender_id } = payload;
+
+      if (!referenceId || !message || !target_user_id || !sender_id) return;
+
+      // Don't notify yourself
+      if (target_user_id === sender_id) return;
+
+      const targetSockets = onlineUsers.get(String(target_user_id));
+      if (!targetSockets || targetSockets.size === 0) return;
+
+      for (const socketId of targetSockets.keys()) {
+        io.to(socketId).emit("notification", {
+          ...payload,
+          type, // "react", "comment", "request"
+          created_at: Date.now(),
+        });
+      }
+    };
+
+    // --------------------
+    // Event listeners
+    // --------------------
+    socket.on("post-react", (payload) => emitNotification("react", payload));
+    socket.on("post-comment", (payload) =>
+      emitNotification("comment", payload)
+    );
+    socket.on("account-request", (payload) =>
+      emitNotification("request", payload)
+    );
+
+    /* ============================================================
        Disconnect
     ============================================================ */
 
