@@ -132,7 +132,6 @@ const initSocket = (server) => {
     });
 
     socket.on("typing", ({ chatId, userId }) => {
-      console.log("Typing", { chatId, userId });
       if (!chatId || !userId) return;
 
       socket.to(String(chatId)).emit("typing", {
@@ -143,7 +142,6 @@ const initSocket = (server) => {
     });
 
     socket.on("stop-typing", ({ chatId, userId }) => {
-      console.log("Stop Typing", { chatId, userId });
       if (!chatId || !userId) return;
 
       socket.to(String(chatId)).emit("typing", {
@@ -205,7 +203,7 @@ const initSocket = (server) => {
           io.to(callerId).emit("call-timeout");
           io.to(targetUserId).emit("call-timeout");
 
-          io.to(tragetuserId).emit("stop-ringing");
+          io.to(targetUserId).emit("stop-ringing");
         }
       }, 30000);
     });
@@ -288,6 +286,14 @@ const initSocket = (server) => {
         userId: uid,
         online: onlineUsers.has(uid),
         lastSeen: lastSeen.get(uid) || null,
+      });
+    });
+
+    socket.on("request-online-users", () => {
+      const users = Array.from(onlineUsers.keys());
+
+      socket.emit("online-users", {
+        users,
       });
     });
 
