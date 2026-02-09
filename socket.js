@@ -281,6 +281,57 @@ const initSocket = (server) => {
       });
     });
 
+    const callRooms = {};
+
+    // ===============================
+    // User joins a call
+    // ===============================
+    socket.on("call-user-joined", ({ agoraUid, user, roomId }) => {
+      console.log({ agoraUid, user, roomId });
+      if (!roomId || !agoraUid || !user) return;
+
+      // Join socket.io room
+      socket.join(roomId);
+
+      // Add user to callRooms
+      if (!callRooms[roomId]) callRooms[roomId] = {};
+      callRooms[roomId][agoraUid] = user;
+
+      // Broadcast to others in the room
+      socket.to(roomId).emit("call-user-joined", { agoraUid, user });
+
+      console.log(
+        `👤 User joined call: ${user.display_name} (${agoraUid}) in room ${roomId}`
+      );
+    });
+
+    // ===============================
+    // User leaves a call
+    // ===============================
+    socket.on("call-user-left", ({ agoraUid, user, roomId }) => {
+      if (!roomId || !agoraUid) return;
+
+      // Remove user from room
+      if (callRooms[roomId]) {
+        delete callRooms[roomId][agoraUid];
+
+        // Clean up empty room
+        if (Object.keys(callRooms[roomId]).length === 0) {
+          delete callRooms[roomId];
+        }
+      }
+
+      // Broadcast to others
+      socket.to(roomId).emit("call-user-left", { agoraUid, user });
+
+      // Leave socket.io room
+      socket.leave(roomId);
+
+      console.log(
+        `👤 User left call: ${user?.display_name || agoraUid} in room ${roomId}`
+      );
+    });
+
     /* ============================================================
        Online Status
     ============================================================ */
