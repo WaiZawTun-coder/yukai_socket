@@ -154,39 +154,34 @@ const initSocket = (server) => {
     /* ============================================================
        Calls + Busy
     ============================================================ */
-    const isBusy = (uid) => activeCalls.has(uid) || pendingCalls.has(uid);
+    const isBusy = (uid) => activeCalls.has(uid);
 
     socket.on("call-user", ({ toUsers, callType, caller, roomId }) => {
       const callerId = String(userId);
 
       if (!Array.isArray(toUsers) || !callType || !caller || !roomId) return;
-
-      // caller still online?
       if (!onlineUsers.has(callerId)) return;
+
+      const callees = new Set();
 
       for (const user of toUsers) {
         const targetUserId = String(user);
 
-        // skip calling yourself
         if (targetUserId === callerId) continue;
 
-        // target online?
-        const targetSockets = onlineUsers.get(targetUserId);
-        if (!targetSockets || targetSockets.size === 0) {
-          socket.emit("user-offline", { toUserId: targetUserId });
-          continue;
-        }
-
-        // Busy check
         if (isBusy(targetUserId) || isBusy(callerId)) {
           socket.emit("user-busy", { toUserId: targetUserId });
           continue;
         }
 
-        // mark pending
-        pendingCalls.set(roomId, new Set(toUsers));
+        const targetSockets = onlineUsers.get(targetUserId);
+        if (!targetSockets?.size) {
+          socket.emit("user-offline", { toUserId: targetUserId });
+          continue;
+        }
 
-        // ring all target devices
+        callees.add(targetUserId);
+
         for (const socketId of targetSockets.keys()) {
           io.to(socketId).emit("incoming-call", {
             callId: roomId,
@@ -196,53 +191,39 @@ const initSocket = (server) => {
             roomId,
           });
         }
-
-        // timeout per target
-        setTimeout(() => {
-          if (pendingCalls.get(callerId) === targetUserId) {
-            pendingCalls.delete(callerId);
-            pendingCalls.delete(targetUserId);
-
-            io.to(callerId).emit("call-timeout");
-            io.to(targetUserId).emit("call-timeout");
-            io.to(targetUserId).emit("stop-ringing");
-          }
-        }, 30000);
       }
+
+      if (!callees.size) return;
+
+      const timeout = setTimeout(() => {
+        pendingCalls.delete(roomId);
+        for (const uid of callees) {
+          io.to(uid).emit("call-timeout");
+          io.to(uid).emit("stop-ringing");
+        }
+      }, 30000);
+
+      pendingCalls.set(roomId, {
+        callerId,
+        callees,
+        timeout,
+      });
     });
 
-    socket.on("answer-call", ({ callId, toUserId }) => {
-      const callerId = String(toUserId);
+    socket.on("answer-call", ({ callId }) => {
       const calleeId = String(userId);
+      const pending = pendingCalls.get(callId);
+      if (!pending) return;
 
-      // move pending → active
-      if (pendingCalls.get(callerId) === calleeId) {
-        pendingCalls.delete(callerId);
-        pendingCalls.delete(calleeId);
+      const { callerId, callees, timeout } = pending;
 
-        activeCalls.set(callerId, calleeId);
-        activeCalls.set(calleeId, callerId);
+      clearTimeout(timeout);
+      pendingCalls.delete(callId);
 
-        io.to(callerId).emit("call-answered", {
-          fromUserId: calleeId,
-          callId,
-        });
+      activeCalls.set(callerId, { peerId: calleeId, roomId: callId });
+      activeCalls.set(calleeId, { peerId: callerId, roomId: callId });
 
-        io.to(calleeId).emit("stop-ringing");
-      }
-    });
-
-    socket.on("reject-call", ({ callId, toUserId }) => {
-      const callerId = String(toUserId);
-      const calleeId = String(userId);
-
-      pendingCalls.delete(callerId);
-      pendingCalls.delete(calleeId);
-
-      activeCalls.delete(callerId);
-      activeCalls.delete(calleeId);
-
-      io.to(callerId).emit("call-rejected", {
+      io.to(callerId).emit("call-answered", {
         fromUserId: calleeId,
         callId,
       });
@@ -250,34 +231,56 @@ const initSocket = (server) => {
       io.to(calleeId).emit("stop-ringing");
     });
 
-    socket.on("end-call", ({ toUserId, roomId }) => {
-      const peerId = String(toUserId);
-      const callerId = String(userId);
+    socket.on("reject-call", ({ callId }) => {
+      const calleeId = String(userId);
+      const pending = pendingCalls.get(callId);
+      if (!pending) return;
 
-      pendingCalls.delete(callerId);
-      pendingCalls.delete(peerId);
+      const { callerId, callees, timeout } = pending;
+
+      callees.delete(calleeId);
+      io.to(callerId).emit("call-rejected", { fromUserId: calleeId });
+
+      if (!callees.size) {
+        clearTimeout(timeout);
+        pendingCalls.delete(callId);
+      }
+
+      io.to(calleeId).emit("stop-ringing");
+    });
+
+    socket.on("end-call", ({ toUserId }) => {
+      const callerId = String(userId);
+      const peerId = String(toUserId);
+
+      const call = activeCalls.get(callerId);
+      if (!call) return;
 
       activeCalls.delete(callerId);
       activeCalls.delete(peerId);
 
-      const payload = {
+      io.to(peerId).emit("call-ended", {
         fromUserId: callerId,
-        roomId: roomId || null,
-      };
+        roomId: call.roomId,
+      });
 
-      io.to(peerId).emit("call-ended", payload);
-      io.to(callerId).emit("call-ended", payload);
+      io.to(callerId).emit("call-ended", {
+        fromUserId: callerId,
+        roomId: call.roomId,
+      });
     });
 
     socket.on("check-user-busy", (targetUserId) => {
       const uid = String(targetUserId);
+      const active = activeCalls.get(uid);
 
       socket.emit("busy-status", {
         userId: uid,
-        busy: isBusy(uid),
-        peerId: activeCalls.get(uid) || pendingCalls.get(uid) || null,
+        busy: !!active,
+        peerId: active?.peerId || null,
       });
     });
+
     /* ============================================================
        Online Status
     ============================================================ */
