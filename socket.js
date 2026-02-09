@@ -13,11 +13,11 @@ const onlineUsers = new Map();
 // userId -> lastSeen timestamp
 const lastSeen = new Map();
 
-// userId -> otherUserId (busy tracking)
-const activeCalls = new Map();
-
-// userId -> otherUserId (ringing calls)
+// roomId -> Set<userId>
 const pendingCalls = new Map();
+
+// roomId -> Set<userId>
+const activeCalls = new Map();
 
 /* ============================================================
    Init Socket Server
@@ -184,8 +184,7 @@ const initSocket = (server) => {
         }
 
         // mark pending
-        pendingCalls.set(callerId, targetUserId);
-        pendingCalls.set(targetUserId, callerId);
+        pendingCalls.set(roomId, new Set(toUsers));
 
         // ring all target devices
         for (const socketId of targetSockets.keys()) {
