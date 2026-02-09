@@ -156,56 +156,60 @@ const initSocket = (server) => {
     ============================================================ */
     const isBusy = (uid) => activeCalls.has(uid) || pendingCalls.has(uid);
 
-    socket.on("call-user", ({ toUserId, callType, caller, roomId }) => {
-      const targetUserId = String(toUserId);
+    socket.on("call-user", ({ toUsers, callType, caller, roomId }) => {
       const callerId = String(userId);
 
-      if (!targetUserId || !callType || !caller || !roomId) return;
-      if (targetUserId === callerId) return;
+      if (!Array.isArray(toUsers) || !callType || !caller || !roomId) return;
 
       // caller still online?
       if (!onlineUsers.has(callerId)) return;
 
-      // target online?
-      const targetSockets = onlineUsers.get(targetUserId);
-      if (!targetSockets || targetSockets.size === 0) {
-        socket.emit("user-offline", { toUserId: targetUserId });
-        return;
-      }
+      for (const user of toUsers) {
+        const targetUserId = String(user);
 
-      // Busy check
-      if (isBusy(targetUserId) || isBusy(callerId)) {
-        socket.emit("user-busy", { toUserId: targetUserId });
-        return;
-      }
+        // skip calling yourself
+        if (targetUserId === callerId) continue;
 
-      // mark pending
-      pendingCalls.set(callerId, targetUserId);
-      pendingCalls.set(targetUserId, callerId);
-
-      // ring all target devices
-      for (const socketId of targetSockets.keys()) {
-        io.to(socketId).emit("incoming-call", {
-          callId: roomId,
-          fromUserId: callerId,
-          callType,
-          caller,
-          roomId,
-        });
-      }
-
-      // timeout
-      setTimeout(() => {
-        if (pendingCalls.get(callerId) === targetUserId) {
-          pendingCalls.delete(callerId);
-          pendingCalls.delete(targetUserId);
-
-          io.to(callerId).emit("call-timeout");
-          io.to(targetUserId).emit("call-timeout");
-
-          io.to(targetUserId).emit("stop-ringing");
+        // target online?
+        const targetSockets = onlineUsers.get(targetUserId);
+        if (!targetSockets || targetSockets.size === 0) {
+          socket.emit("user-offline", { toUserId: targetUserId });
+          continue;
         }
-      }, 30000);
+
+        // Busy check
+        if (isBusy(targetUserId) || isBusy(callerId)) {
+          socket.emit("user-busy", { toUserId: targetUserId });
+          continue;
+        }
+
+        // mark pending
+        pendingCalls.set(callerId, targetUserId);
+        pendingCalls.set(targetUserId, callerId);
+
+        // ring all target devices
+        for (const socketId of targetSockets.keys()) {
+          io.to(socketId).emit("incoming-call", {
+            callId: roomId,
+            fromUserId: callerId,
+            callType,
+            caller,
+            roomId,
+          });
+        }
+
+        // timeout per target
+        setTimeout(() => {
+          if (pendingCalls.get(callerId) === targetUserId) {
+            pendingCalls.delete(callerId);
+            pendingCalls.delete(targetUserId);
+
+            io.to(callerId).emit("call-timeout");
+            io.to(targetUserId).emit("call-timeout");
+            io.to(targetUserId).emit("stop-ringing");
+          }
+        }, 30000);
+      }
     });
 
     socket.on("answer-call", ({ callId, toUserId }) => {
