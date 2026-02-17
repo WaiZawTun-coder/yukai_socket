@@ -71,7 +71,7 @@ const initSocket = (server) => {
       "User:",
       userId,
       "Device:",
-      socket.deviceId
+      socket.deviceId,
     );
 
     // Join personal room
@@ -301,7 +301,7 @@ const initSocket = (server) => {
       socket.to(roomId).emit("call-user-joined", { agoraUid, user });
 
       console.log(
-        `👤 User joined call: ${user.display_name} (${agoraUid}) in room ${roomId}`
+        `👤 User joined call: ${user.display_name} (${agoraUid}) in room ${roomId}`,
       );
     });
 
@@ -328,7 +328,7 @@ const initSocket = (server) => {
       socket.leave(roomId);
 
       console.log(
-        `👤 User left call: ${user?.display_name || agoraUid} in room ${roomId}`
+        `👤 User left call: ${user?.display_name || agoraUid} in room ${roomId}`,
       );
     });
 
@@ -384,6 +384,7 @@ const initSocket = (server) => {
             type,
             created_at: Date.now(),
           });
+          io.to(socketId).emit("new-notification");
         }
       }
     };
@@ -393,10 +394,10 @@ const initSocket = (server) => {
     // --------------------
     socket.on("post-react", (payload) => emitNotification("react", payload));
     socket.on("post-comment", (payload) =>
-      emitNotification("comment", payload)
+      emitNotification("comment", payload),
     );
     socket.on("account-request", (payload) =>
-      emitNotification("request", payload)
+      emitNotification("request", payload),
     );
 
     /* ============================================================
